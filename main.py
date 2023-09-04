@@ -67,3 +67,5 @@ for r in range(args.runs):
     print("Target: {}         Run: {} / {}".format(target, str(r+1), args.runs))
     train_dataset = dataset(args.data_root, sources, train=True)
     # test_dataset = dataset(args.data_root, target, train=False)
+
+    exit()
