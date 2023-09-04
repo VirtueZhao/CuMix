@@ -6,6 +6,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import argparse
 from data.dataset import DomainDataset
+from methods import CuMix
 
 DNET_DOMAINS = ['clipart', 'infograph', 'painting', 'quickdraw', 'real', 'sketch']
 
@@ -66,6 +67,14 @@ val_datasets = None
 for r in range(args.runs):
     print("Target: {}         Run: {} / {}".format(target, str(r+1), args.runs))
     train_dataset = dataset(args.data_root, sources, train=True)
-    # test_dataset = dataset(args.data_root, target, train=False)
+    test_dataset = dataset(args.data_root, target, train=False)
+
+    attributes = train_dataset.full_attributes
+    seen = train_dataset.seen
+    unseen = train_dataset.unseen
+
+    method = CuMix(seen_classes=seen, unseen_classes=unseen, attributes=attributes, configs=configs)
 
     exit()
+
+
