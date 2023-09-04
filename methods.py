@@ -4,6 +4,11 @@ import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
 
 
+def manual_CE(predictions, labels):
+    loss = -torch.mean(torch.sum(labels * torch.log_softmax(predictions, dim=1), dim=1))
+    return loss
+
+
 class UnitClassifier(nn.Module):
     def __init__(self, attributes, classes, device='cuda'):
         super(UnitClassifier, self).__init__()
@@ -85,5 +90,9 @@ class CuMix:
         self.final_classifier = UnitClassifier(self.attributes, unseen_classes, self.device)
         self.final_classifier.eval()
 
+        self.dpb = configs['domains_per_batch']
+        self.iters = configs['iters_per_epoch']
 
-
+        self.criterion = nn.CrossEntropyLoss()
+        self.mixup_criterion = manual_CE
+        self.current_epoch = -1
