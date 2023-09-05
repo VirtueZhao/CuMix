@@ -169,9 +169,39 @@ class DistributedBalancedSampler(torch.utils.data.sampler.Sampler):
         self.samples = torch.LongTensor(self._get_samples())
 
     def __len__(self):
-        return self.iters * self.bs
+        return self.num_samples
+
+    def _sampling(self, d_idx, n):
+        if self.indices[d_idx] + n >= len(self.dict_domains[d_idx]):
+            self.dict_domains[d_idx] += self.dict_domains[d_idx]
+        self.indices[d_idx] = self.indices[d_idx] + n
+        return self.dict_domains[d_idx][self.indices[d_idx] - n:self.indices[d_idx]]
 
     def _get_samples(self):
-        
+        sIdx = []
+        for i in range(self.iters // self.num_replicas):
+            for j in range(self.n_doms):
+                sIdx += self._sampling(j, self.spd * self.num_replicas)
+        return np.array(sIdx)
+
+    def __iter__(self):
+        if self.shuffle:
+            indices = list(range(len(self.samples)))
+        else:
+            indices = list(range(len(self.dataset)))
+
+        indices += indices[:(self.total_size - len(indices))]
+        assert len(indices) == self.total_size
+
+        indices = indices[self.rank:self.total_size:self.num_replicas]
+        assert len(indices) == self.num_samples
+
+        return iter(self.samples[indices])
+
+    def set_epoch(self, epoch):
+        self.epoch = epoch
+
+
+
 
 

@@ -112,6 +112,6 @@ class CuMix:
                                 drop_last=True
                                 )
 
-        exit()
+        
 
 
