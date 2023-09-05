@@ -7,13 +7,14 @@ import torch.backends.cudnn as cudnn
 import argparse
 from data.dataset import DomainDataset
 from methods import CuMix
+from tqdm import tqdm
 
 DNET_DOMAINS = ['clipart', 'infograph', 'painting', 'quickdraw', 'real', 'sketch']
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--target", default="clipart")
 parser.add_argument("--data_root", default="/dataset/", type=str)
-parser.add_argument("--runs", default=10, type=int)
+parser.add_argument("--runs", default=2, type=int)
 parser.add_argument("--log_dir", default="./logs", type=str)
 parser.add_argument("--ckpt_dir", default="./checkpoints", type=str)
 parser.add_argument("--config_file", default=None)
@@ -74,6 +75,13 @@ for r in range(args.runs):
     unseen = train_dataset.unseen
 
     method = CuMix(seen_classes=seen, unseen_classes=unseen, attributes=attributes, configs=configs)
+
+    temp_results = []
+    top_sources = 0
+    top_idx = -1
+
+    for e in tqdm(range(0, configs['epochs'])):
+        semantic_loss, mimg_loss, mfeat_loss = method.fit(train_dataset)
 
     exit()
 

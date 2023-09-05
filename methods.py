@@ -1,7 +1,9 @@
 import os
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 from torchvision.models import resnet50, ResNet50_Weights
+from data.dataset import DistributedBalancedSampler
 
 
 def manual_CE(predictions, labels):
@@ -39,8 +41,7 @@ def weights_init(m):
 
 class CuMix:
 
-    def __init__(self, seen_classes, unseen_classes, attributes, configs, zsl_only=False, dg_only=False,
-                 device='cuda', world_size=1, rank=0):
+    def __init__(self, seen_classes, unseen_classes, attributes, configs, device='cuda', world_size=1, rank=0):
         self.end_to_end = True
         self.domain_mix = True
 
@@ -96,3 +97,21 @@ class CuMix:
         self.criterion = nn.CrossEntropyLoss()
         self.mixup_criterion = manual_CE
         self.current_epoch = -1
+
+    def fit(self, data):
+        self.current_epoch += 1
+        self.mixup_beta = min(self.max_beta, max(self.max_beta * self.current_epoch / self.mixup_step, 0.1))
+        self.mixup_domain = min(1.0, max((self.mixup_step * 2. - self.current_epoch) / self.mixup_step, 0.0))
+
+        dataloader = DataLoader(dataset=data,
+                                batch_size=self.batch_size,
+                                num_workers=8,
+                                sampler=DistributedBalancedSampler(data, self.batch_size//self.dpb,
+                                                                   num_replicas=self.world_size, rank=self.rank,
+                                                                   iters=self.iters, domains_per_batch=self.dpb),
+                                drop_last=True
+                                )
+
+        exit()
+
+
