@@ -164,7 +164,7 @@ class CuMix:
 
             preds, features = self.forward(inputs, return_features=True)
 
-            
+
 
             exit()
 
