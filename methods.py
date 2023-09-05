@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.models import resnet50, ResNet50_Weights
 from data.dataset import DistributedBalancedSampler
@@ -12,7 +13,7 @@ def manual_CE(predictions, labels):
 
 
 class UnitClassifier(nn.Module):
-    def __init__(self, attributes, classes, device='cuda'):
+    def __init__(self, attributes, classes, device='cuda:3'):
         super(UnitClassifier, self).__init__()
         self.fc = nn.Linear(attributes[0].size(0), classes.size(0), bias=False).to(device)
 
@@ -41,7 +42,7 @@ def weights_init(m):
 
 class CuMix:
 
-    def __init__(self, seen_classes, unseen_classes, attributes, configs, device='cuda', world_size=1, rank=0):
+    def __init__(self, seen_classes, unseen_classes, attributes, configs, device='cuda:3', world_size=1, rank=0):
         self.end_to_end = True
         self.domain_mix = True
 
@@ -98,20 +99,74 @@ class CuMix:
         self.mixup_criterion = manual_CE
         self.current_epoch = -1
 
+    def create_one_hot(self, y):
+        y_onehot = torch.LongTensor(y.size(0), self.seen_classes.size(0)).to(self.device)
+        y_onehot.zero_()
+        y_onehot.scatter_(1, y.view(-1, 1), 1)
+        return y_onehot
+
+    def get_classifier_params(self):
+        return self.semantic_projector.parameters()
+
+    def train(self):
+        self.backbone.train()
+        self.semantic_projector.train()
+        self.train_classifier.train()
+        self.final_classifier.train()
+
+    def eval(self):
+        self.backbone.eval()
+        self.semantic_projector.eval()
+        self.final_classifier.eval()
+        self.train_classifier.eval()
+
+    def zero_grad(self):
+        self.backbone.zero_grad()
+        self.semantic_projector.zero_grad()
+        self.final_classifier.zero_grad()
+        self.train_classifier.zero_grad()
+
+    def forward(self, input, return_features=False):
+        features = self.backbone(input)
+        semantic_projection = self.semantic_projector(features)
+        prediction = self.train_classifier(semantic_projection)
+        if return_features:
+            return prediction, features
+        return prediction
+
     def fit(self, data):
         self.current_epoch += 1
         self.mixup_beta = min(self.max_beta, max(self.max_beta * self.current_epoch / self.mixup_step, 0.1))
         self.mixup_domain = min(1.0, max((self.mixup_step * 2. - self.current_epoch) / self.mixup_step, 0.0))
 
-        dataloader = DataLoader(dataset=data,
-                                batch_size=self.batch_size,
-                                num_workers=8,
-                                sampler=DistributedBalancedSampler(data, self.batch_size//self.dpb,
-                                                                   num_replicas=self.world_size, rank=self.rank,
-                                                                   iters=self.iters, domains_per_batch=self.dpb),
-                                drop_last=True
-                                )
+        dataloader = DataLoader(data, batch_size=self.batch_size, num_workers=0, shuffle=True, drop_last=True)
 
-        
+        scale_lr = 0.1 ** (self.current_epoch // self.step)
+        optimizer_net = optim.SGD(self.backbone.parameters(), lr=self.lr_net * scale_lr, momentum=0.9,
+                                  weight_decay=self.decay, nesterov=self.nesterov)
+        optimizer_zsl = optim.SGD(self.get_classifier_params(), lr=self.lr * scale_lr, momentum=0.9,
+                                  weight_decay=self.decay, nesterov=self.nesterov)
+
+        if self.freeze_bn:
+            self.eval()
+        else:
+            self.train()
+
+        self.zero_grad()
+        sem_loss = 0.
+        mimg_loss = 0.
+        mfeat_loss = 0.
+
+        for i, (inputs, feature_attributes, domains, labels) in enumerate(dataloader):
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
+            one_hot_labels = self.create_one_hot(labels)
+
+            preds, features = self.forward(inputs, return_features=True)
+
+            
+
+            exit()
+
 
 
