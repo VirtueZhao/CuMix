@@ -135,6 +135,43 @@ class DistributedBalancedSampler(torch.utils.data.sampler.Sampler):
         self.dict_domains = {}
         self.indices = {}
 
+        for i in range(self.n_doms):
+            self.dict_domains[i] = []
+            self.indices[i] = 0
+
+        self.dpb = domains_per_batch
+        self.spd = samples_per_domain
+        self.bs = self.dpb * self.spd
+
+        for idx, d in enumerate(self.domain_ids):
+            self.dict_domains[d].append(idx)
+
+        min_dom = 10000000
+        max_dom = 0
+
+        # for d in self.dict_domains.keys():
+        for d in self.domain_ids:
+            if len(self.dict_domains[d]) < min_dom:
+                min_dom = len(self.dict_domains[d])
+            if len(self.dict_domains[d]) > max_dom:
+                max_dom = len(self.dict_domains[d])
+
+        self.iters = min_dom // self.spd
+
+        if shuffle:
+            for idx in range(self.n_doms):
+                random.shuffle(self.dict_domains[idx])
+
+        self.num_samples = self.iters * self.spd * self.n_doms // self.num_replicas
+        self.total_size = self.num_samples * self.num_replicas
+        self.shuffle = shuffle
+
+        self.samples = torch.LongTensor(self._get_samples())
+
+    def __len__(self):
+        return self.iters * self.bs
+
+    def _get_samples(self):
         
 
 
