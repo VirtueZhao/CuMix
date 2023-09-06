@@ -10,6 +10,7 @@ from methods import CuMix
 from tqdm import tqdm
 import random
 import numpy as np
+from utils import test
 
 random.seed(42)
 np.random.seed(42)
@@ -90,7 +91,8 @@ configs['epochs'] = 1
 for e in tqdm(range(0, configs['epochs'])):
     semantic_loss, mimg_loss, mfeat_loss = method.fit(train_dataset)
     print("Semantic Loss: {}, Mixup Image Loss: {}, Mixup Feature Loss: {}".format(semantic_loss, mimg_loss, mfeat_loss))
-    
+    accuracy = test(method, test_dataset)
+
     exit()
 
 

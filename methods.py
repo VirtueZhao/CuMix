@@ -145,6 +145,12 @@ class CuMix:
         self.final_classifier.zero_grad()
         self.train_classifier.zero_grad()
 
+    def predict(self, input):
+        features = self.backbone(input)
+        semantic_projection = self.semantic_projector(features)
+        prediction = self.final_classifier(semantic_projection)
+        return prediction
+
     def forward(self, input, return_features=False):
         features = self.backbone(input)
         semantic_projection = self.semantic_projector(features)
@@ -252,7 +258,7 @@ class CuMix:
 
                 print(" ".join(info))
 
-            if (i + 1) == 40:
+            if (i + 1) == 3:
                 self.eval()
                 return sem_loss / (i + 1), mimg_loss / (i + 1), mfeat_loss / (i + 1)
 
