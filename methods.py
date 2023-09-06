@@ -1,15 +1,35 @@
 import os
+import numpy as np
+from numpy.random import default_rng
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.models import resnet50, ResNet50_Weights
-from data.dataset import DistributedBalancedSampler
+
+
+RG = np.random.default_rng(seed=42)
+
+
+def swap(xs, a, b):
+    xs[a], xs[b] = xs[b], xs[a]
+
+
+def derange(xs):
+    x_new = [] + xs
+    for a in range(1, len(x_new)):
+        b = RG.choice(range(0, a))
+        swap(x_new, a, b)
+    return x_new
 
 
 def manual_CE(predictions, labels):
     loss = -torch.mean(torch.sum(labels * torch.log_softmax(predictions, dim=1), dim=1))
     return loss
+
+
+def std_mix(x, indices, ratio):
+    return ratio * x + (1. - ratio) * x[indices]
 
 
 class UnitClassifier(nn.Module):
@@ -134,6 +154,31 @@ class CuMix:
             return prediction, features
         return prediction
 
+    def get_sample_mixup(self, domains):
+        if self.dpb > 1:
+            doms = list(range(len(torch.unique(domains))))
+            bs = domains.size(0) // len(doms)
+            selected = derange(doms)
+            permuted_across_dom = torch.cat([(torch.randperm(bs) + selected[i] * bs) for i in range(len(doms))])
+            permuted_within_dom = torch.cat([(torch.randperm(bs) + i * bs) for i in range(len(doms))])
+            ratio_within_dom = torch.from_numpy(RG.binomial(1, self.mixup_domain, size=domains.size(0)))
+            indices = ratio_within_dom * permuted_within_dom + (1. - ratio_within_dom) * permuted_across_dom
+        else:
+            indices = torch.randperm(domains.size(0))
+        return indices.long()
+
+    def get_ratio_mixup(self, domains):
+        return torch.from_numpy(RG.beta(self.mixup_beta, self.mixup_beta, size=domains.size(0))).float()
+
+    def get_mixup_sample_and_ratio(self, domains):
+        return self.get_sample_mixup(domains), self.get_ratio_mixup(domains)
+
+    def get_mixed_input_labels(self, input, labels, indices, ratios, dims=2):
+        if dims == 4:
+            return std_mix(input, indices, ratios.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)), std_mix(labels, indices, ratios.unsqueeze(-1))
+        else:
+            return std_mix(input, indices, ratios.unsqueeze(-1)), std_mix(labels, indices, ratios.unsqueeze(-1))
+
     def fit(self, data):
         self.current_epoch += 1
         self.mixup_beta = min(self.max_beta, max(self.max_beta * self.current_epoch / self.mixup_step, 0.1))
@@ -164,9 +209,16 @@ class CuMix:
 
             preds, features = self.forward(inputs, return_features=True)
 
+            semantic_loss = self.criterion(preds, labels)
+            sem_loss += semantic_loss.item()
 
+            print("Semantic Loss: {}".format(semantic_loss))
 
-            exit()
+            mix_indices, mix_ratios = self.get_mixup_sample_and_ratio(domains)
+            mix_ratios = mix_ratios.to(inputs.device)
+            mixup_features, mixup_labels = self.get_mixed_input_labels(features, one_hot_labels, mix_indices, mix_ratios)
+
+            mixup_features_predictions = self.forward_features(mixup_features)
 
 
 
