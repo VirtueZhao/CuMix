@@ -72,24 +72,25 @@ results = []
 results_top = []
 val_datasets = None
 
-for r in range(args.runs):
-    print("Target: {}         Run: {} / {}".format(target, str(r+1), args.runs))
-    train_dataset = dataset(args.data_root, sources, train=True)
-    test_dataset = dataset(args.data_root, target, train=False)
+train_dataset = dataset(args.data_root, sources, train=True)
+test_dataset = dataset(args.data_root, target, train=False)
 
-    attributes = train_dataset.full_attributes
-    seen = train_dataset.seen
-    unseen = train_dataset.unseen
+attributes = train_dataset.full_attributes
+seen = train_dataset.seen
+unseen = train_dataset.unseen
 
-    method = CuMix(seen_classes=seen, unseen_classes=unseen, attributes=attributes, configs=configs)
+method = CuMix(seen_classes=seen, unseen_classes=unseen, attributes=attributes, configs=configs)
 
-    temp_results = []
-    top_sources = 0
-    top_idx = -1
+temp_results = []
+top_sources = 0
+top_idx = -1
 
-    for e in tqdm(range(0, configs['epochs'])):
-        semantic_loss, mimg_loss, mfeat_loss = method.fit(train_dataset)
+configs['epochs'] = 1
 
+for e in tqdm(range(0, configs['epochs'])):
+    semantic_loss, mimg_loss, mfeat_loss = method.fit(train_dataset)
+    print("Semantic Loss: {}, Mixup Image Loss: {}, Mixup Feature Loss: {}".format(semantic_loss, mimg_loss, mfeat_loss))
+    
     exit()
 
 

@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision.models import resnet50, ResNet50_Weights
+import datetime
 
 
 RG = np.random.default_rng(seed=42)
@@ -65,6 +66,7 @@ class CuMix:
     def __init__(self, seen_classes, unseen_classes, attributes, configs, device='cuda:3', world_size=1, rank=0):
         self.end_to_end = True
         self.domain_mix = True
+        self.configs = configs
 
         backbone = eval(configs['backbone'])
         os.environ['TORCH_HOME'] = '/data/dzha866/Project/CuMix/'
@@ -125,9 +127,6 @@ class CuMix:
         y_onehot.scatter_(1, y.view(-1, 1), 1)
         return y_onehot
 
-    def get_classifier_params(self):
-        return self.semantic_projector.parameters()
-
     def train(self):
         self.backbone.train()
         self.semantic_projector.train()
@@ -152,6 +151,11 @@ class CuMix:
         prediction = self.train_classifier(semantic_projection)
         if return_features:
             return prediction, features
+        return prediction
+
+    def forward_features(self, features):
+        semantic_projection = self.semantic_projector(features)
+        prediction = self.train_classifier(semantic_projection)
         return prediction
 
     def get_sample_mixup(self, domains):
@@ -189,7 +193,7 @@ class CuMix:
         scale_lr = 0.1 ** (self.current_epoch // self.step)
         optimizer_net = optim.SGD(self.backbone.parameters(), lr=self.lr_net * scale_lr, momentum=0.9,
                                   weight_decay=self.decay, nesterov=self.nesterov)
-        optimizer_zsl = optim.SGD(self.get_classifier_params(), lr=self.lr * scale_lr, momentum=0.9,
+        optimizer_zsl = optim.SGD(self.semantic_projector.parameters(), lr=self.lr * scale_lr, momentum=0.9,
                                   weight_decay=self.decay, nesterov=self.nesterov)
 
         if self.freeze_bn:
@@ -212,13 +216,46 @@ class CuMix:
             semantic_loss = self.criterion(preds, labels)
             sem_loss += semantic_loss.item()
 
-            print("Semantic Loss: {}".format(semantic_loss))
-
             mix_indices, mix_ratios = self.get_mixup_sample_and_ratio(domains)
             mix_ratios = mix_ratios.to(inputs.device)
             mixup_features, mixup_labels = self.get_mixed_input_labels(features, one_hot_labels, mix_indices, mix_ratios)
 
             mixup_features_predictions = self.forward_features(mixup_features)
+            mixup_feature_loss = self.mixup_criterion(mixup_features_predictions, mixup_labels)
 
+            total_loss = self.semantic_w * semantic_loss + self.mixup_feat_w * mixup_feature_loss
 
+            mfeat_loss += mixup_feature_loss.item()
 
+            mix_indices, mix_ratios = self.get_mixup_sample_and_ratio(domains)
+            mixup_inputs, mixup_labels = self.get_mixed_input_labels(inputs, one_hot_labels, mix_indices,
+                                                                     mix_ratios.to(self.device), dims=4)
+            mixup_img_predictions = self.forward(mixup_inputs, return_features=False)
+            mixup_img_loss = self.mixup_criterion(mixup_img_predictions, mixup_labels)
+            total_loss = total_loss + self.mixup_w * mixup_img_loss
+            mimg_loss += mixup_img_loss.item()
+
+            self.zero_grad()
+            total_loss.backward()
+            optimizer_net.step()
+            optimizer_zsl.step()
+
+            del total_loss
+
+            if (i + 1) % 20 == 0:
+                info = []
+                info += [f"epoch [{self.current_epoch + 1}/{self.configs['epochs']}]"]
+                info += [f"batch [{i + 1}/{len(dataloader)}]"]
+                info += [f"sem_loss {semantic_loss}"]
+                info += [f"mimg_loss {mimg_loss}"]
+                info += [f"mfeat_loss {mfeat_loss}"]
+
+                print(" ".join(info))
+
+            if (i + 1) == 40:
+                self.eval()
+                return sem_loss / (i + 1), mimg_loss / (i + 1), mfeat_loss / (i + 1)
+
+        self.eval()
+
+        return sem_loss / (i + 1), mimg_loss / (i + 1), mfeat_loss / (i + 1)
