@@ -11,6 +11,7 @@ from tqdm import tqdm
 import random
 import numpy as np
 from utils import test
+import pickle
 
 random.seed(42)
 np.random.seed(42)
@@ -86,13 +87,27 @@ temp_results = []
 top_sources = 0
 top_idx = -1
 
-configs['epochs'] = 1
+configs['epochs'] = 5
 
 for e in tqdm(range(0, configs['epochs'])):
     semantic_loss, mimg_loss, mfeat_loss = method.fit(train_dataset)
     print("Semantic Loss: {}, Mixup Image Loss: {}, Mixup Feature Loss: {}".format(semantic_loss, mimg_loss, mfeat_loss))
     accuracy = test(method, test_dataset)
+    temp_results = accuracy
 
-    exit()
+    logger['sem_loss'].append(semantic_loss)
+    logger['mimg_loss'].append(mimg_loss)
+    logger['mfeat_loss'].append(mfeat_loss)
 
+checkpoint_dict = {}
+method.save(checkpoint_dict)
+current_checkpoint_name = checkpoint_file.replace('runN.pth', 'epoch' + str(e+1) + '.pth')
+torch.save(checkpoint_dict, current_checkpoint_name)
 
+logger['results'].append(temp_results)
+logger['checkpoints'].append(current_checkpoint_name)
+print(target, logger['results'][top_idx])
+
+print('\nResults for ' + target, np.mean(logger['results']), np.std(logger['results']))
+with open(log_file, 'wb') as handle:
+    pickle.dump(logger, handle, protocol=pickle.HIGHEST_PROTOCOL)

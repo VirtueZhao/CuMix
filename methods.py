@@ -127,6 +127,13 @@ class CuMix:
         y_onehot.scatter_(1, y.view(-1, 1), 1)
         return y_onehot
 
+    def save(self, dict):
+        dict['backbone'] = self.backbone.state_dict()
+        dict['semantic_projector'] = self.semantic_projector.state_dict()
+        dict['train_classifier'] = self.train_classifier.state_dict()
+        dict['final_classifier'] = self.final_classifier.state_dict()
+        dict['epoch'] = self.current_epoch
+
     def train(self):
         self.backbone.train()
         self.semantic_projector.train()

@@ -20,21 +20,11 @@ def test(model, test_data, device='cuda:3', zsl=True):
                 idx = (labels == tgt)
                 if idx.float().sum() == 0:
                     continue
-                print(tgt)
-                print(idx.float().sum())
-                print()
-                # per_class_hits[tgt] += torch.sum(labels[idx] == predicted_labels[idx].cpu())
-                print(labels[idx])
-                print(predicted_labels[idx])
-            exit()
 
+                per_class_hits[tgt] += torch.sum(labels[idx] == predicted_labels[idx].cpu())
+                per_class_samples[tgt] += torch.sum(idx).cpu()
 
+        acc_per_class = per_class_hits / per_class_samples
+        acc_unseen = acc_per_class.mean(0)
 
-    exit()
-
-
-
-
-
-
-
+    return acc_unseen.item()
